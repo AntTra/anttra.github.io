@@ -1,17 +1,20 @@
 # Synapse
-The main point of this project is to get insights of how to create websites and different libraries that can be used with react together with next.js. This is a chaotic collaboration between two students that pretty much has never created a website with the aim of incorporating backend usage before.
+The main point of this project is to get insights of how to create websites and different libraries that can be used with react together with next.js. This is a chaotic collaboration between two students that pretty much has never created a website with the aim of incorporating backend usage before. It serves as a sandbox for building interactive web experiences and experimenting with frontend implementation
 
 Demo: https://proj-synapse.vercel.app/
 
 ## Main libraries used
-* THREE-fiber
-* Base-UI
+* Framework: Next.js (React)
+* Animation: GSAP
+* 3D/Graphics: React Three
+* FiberUI Components: Base-UI
+* Computer Vision: OpenCV.js
 
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
 
-First, make sure you have Node.js and npm installed.
+First, make sure you have Node.js (v20+ recommended) and npm installed.
 ```bash
 # Install nvm
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
