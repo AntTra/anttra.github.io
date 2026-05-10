@@ -72,8 +72,6 @@ const STOPS = [
   { label: 'Rognheim',              desc: '', lat: 63.399670, lon: 10.371500, color: WHITE },
 ].map(s => { const [x, z] = gpsToScene(s.lat, s.lon); return { ...s, x, z }; });
 
-// All other OSM bus stops
-
 const EXTRA_STOPS = ([
   { name: 'Karl Jonssons veg',             lat: 63.401536, lon: 10.408706 },
   { name: 'Karl Jonssons veg',             lat: 63.401403, lon: 10.408626 },
@@ -154,10 +152,8 @@ const EXTRA_STOPS = ([
   return { label: s.name, desc: '', lat: s.lat, lon: s.lon, x, z, color: 0x006688 as number };
 });
 
-// Combined list used for arrival detection
 const ALL_STOPS = [...STOPS, ...EXTRA_STOPS];
 
-// Stops that trigger arrival notifications
 const NOTIFY_LABELS = new Set(['Lerkendal 1','Lerkendal 2','Lerkendal 3','Lerkendal 4','Valøyvegen','Hesthagen','Lerkendal gård']);
 const NOTIFY_STOPS  = ALL_STOPS.filter(s => NOTIFY_LABELS.has(s.label));
 
@@ -380,7 +376,6 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
     controls.target.set(0, 0, 0);
     controlsRef.current = controls;
 
-    // Ground
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(1000, 1000),
       new THREE.MeshBasicMaterial({ color: 0x000610 }),
@@ -389,11 +384,9 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
     ground.position.y = -0.01;
     scene.add(ground);
 
-    // Grid
     const grid = new THREE.GridHelper(1000, 1000, 0x002233, 0x001122);
     scene.add(grid);
 
-    // Bus stop markers
     STOPS.forEach(stop => {
       const marker = stopMarker(stop.label, stop.color);
       marker.position.set(stop.x, 0, stop.z);
@@ -406,7 +399,6 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
       scene.add(marker);
     });
 
-    // Generic stop markers — Points dot + instanced ground ring, 2 draw calls total
     {
       const N = EXTRA_STOPS.length;
 
@@ -555,7 +547,6 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
 
           const { bright, mid, dim, civic, resid } = e.data;
 
-          // Roads 3 draw calls
           const addLines = (buf: Float32Array, color: number, transparent: boolean, opacity: number) => {
             if (!buf.length) return;
             const geo = new THREE.BufferGeometry();
@@ -567,7 +558,6 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
           addLines(mid,    0x008855, true,  0.6);
           addLines(dim,    0x003322, true,  0.25);
 
-          // Buildings 16 civic tiles + 16 resid tiles 
           for (const buf of civic) addLines(buf, RED, true, 0.28);
           for (const buf of resid) addLines(buf, 0x006666, true, 0.55);
 
@@ -615,7 +605,6 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
             vehicleMeshes.current.set(v.id, mesh);
           }
 
-          // Arrival detection — only notify for selected stops
           for (const stop of NOTIFY_STOPS) {
             if (Math.hypot(x - stop.x, z - stop.z) < ARRIVE_DIST) {
               const key  = `${v.id}:${stop.label}:${stop.desc}`;
@@ -669,7 +658,6 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
     cam.position.set(0, 1.2, 5.0);
     cam.lookAt(0, 0, 0);
 
-    // Horizontal compass ring
     const ringMesh = new THREE.Mesh(
       new THREE.TorusGeometry(1.2, 0.032, 8, 64),
       new THREE.MeshBasicMaterial({ color: 0x00ffcc, transparent: true, opacity: 0.35 }),
@@ -691,13 +679,12 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
       })));
     }
 
-    // Cardinal dots
     const dotGroup = new THREE.Group();
     ([
-      [0,          0xff0088, 0.095],  // N
-      [Math.PI/2,  0x00ffcc, 0.06],  // E
-      [Math.PI,    0x00ffcc, 0.06],  // S
-      [-Math.PI/2, 0x00ffcc, 0.06],  // W
+      [0,          0xff0088, 0.095],
+      [Math.PI/2,  0x00ffcc, 0.06],
+      [Math.PI,    0x00ffcc, 0.06],
+      [-Math.PI/2, 0x00ffcc, 0.06],
     ] as [number, number, number][]).forEach(([a, color, r]) => {
       const dot = new THREE.Mesh(
         new THREE.SphereGeometry(r, 8, 8),
@@ -711,9 +698,6 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
     compassGroup.add(ringMesh, tickGroup, dotGroup, gyroGrid);
     scene.add(compassGroup);
 
-    // Vertical spin-axis ring — lies in the forward-up (YZ local) plane of compassGroup
-    // TorusGeometry default is XY plane; rotation.y = PI/2 maps it to the YZ plane.
-    // Points on it: (0, R·sin a, -R·cos a) — a=0 is -Z (forward/horizontal look), a=PI/2 is down.
     const spinRing = new THREE.Mesh(
       new THREE.TorusGeometry(1.2, 0.028, 8, 64),
       new THREE.MeshBasicMaterial({ color: 0xffdd00, transparent: true, opacity: 0.45 }),
@@ -721,12 +705,10 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
     spinRing.rotation.y = Math.PI / 2;
     compassGroup.add(spinRing);
 
-    // Pitch marker — a dot that travels around the spin ring to show elevation angle
     const pitchMarker = new THREE.Mesh(
       new THREE.SphereGeometry(0.09, 10, 10),
       new THREE.MeshBasicMaterial({ color: 0xffffff }),
     );
-    // Initial position: horizontal (pitch = 0) → forward point (0, 0, -1.2)
     pitchMarker.position.set(0, 0, -1.2);
     compassGroup.add(pitchMarker);
 
@@ -750,7 +732,6 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={mountRef} style={{ width: '100%', height: '100%', position: 'relative' }} />
 
-      {/* Noise grain */}
       <div style={{
         position: 'absolute', 
         inset: 0, 
@@ -761,7 +742,6 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
         zIndex: 20 
       }} />
 
-      {/* Status panel — top left */}
       <div style={{
         position: 'absolute', top: '0.75rem', left: '0.75rem',
         fontFamily: 'monospace', fontSize: isMobile ? '0.58rem' : '0.65rem', letterSpacing: '0.08em',
@@ -804,7 +784,6 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
         {busStatus.error && <div style={{ color: '#ff0088', marginTop: '0.2rem' }}>{busStatus.error}</div>}
       </div>
 
-      {/* Arrival table — top right (desktop) / below status (mobile hidden to save space) */}
       {!isMobile && arrivals.length >= 0 && (
         <div style={{
           position: 'absolute', top: '0.75rem', right: '0.75rem',
@@ -830,7 +809,6 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
         </div>
       )}
 
-      {/* Stop departure panel — bottom center / full-width on mobile */}
       {stopPanel && (
         <div style={{
           position: 'absolute',
@@ -866,11 +844,11 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
         </div>
       )}
 
-      {/* Bottom-left: gyroscope + reset view + corner text — hidden on mobile */}
-      {!isMobile && (
       <div style={{
         position: 'absolute', bottom: '1.2rem', left: '1.2rem',
         display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.5rem',
+        transform: isMobile ? 'scale(0.65)' : undefined,
+        transformOrigin: 'bottom left',
       }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem' }}>
           <div
@@ -911,9 +889,7 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
           <div style={{ color: '#ff0088' }}>trondheim · atb</div>
         </div>
       </div>
-      )}
 
-      {/* Legend — hidden on mobile to avoid clutter */}
       {!isMobile && (
       <div style={{
         position: 'absolute', bottom: '1.2rem', right: '1.2rem',
