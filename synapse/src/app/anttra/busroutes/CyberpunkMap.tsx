@@ -72,8 +72,6 @@ const STOPS = [
   { label: 'Rognheim',              desc: '', lat: 63.399670, lon: 10.371500, color: WHITE },
 ].map(s => { const [x, z] = gpsToScene(s.lat, s.lon); return { ...s, x, z }; });
 
-// All other OSM bus stops
-
 const EXTRA_STOPS = ([
   { name: 'Karl Jonssons veg',             lat: 63.401536, lon: 10.408706 },
   { name: 'Karl Jonssons veg',             lat: 63.401403, lon: 10.408626 },
@@ -154,10 +152,8 @@ const EXTRA_STOPS = ([
   return { label: s.name, desc: '', lat: s.lat, lon: s.lon, x, z, color: 0x006688 as number };
 });
 
-// Combined list used for arrival detection
 const ALL_STOPS = [...STOPS, ...EXTRA_STOPS];
 
-// Stops that trigger arrival notifications
 const NOTIFY_LABELS = new Set(['Lerkendal 1','Lerkendal 2','Lerkendal 3','Lerkendal 4','Valøyvegen','Hesthagen','Lerkendal gård']);
 const NOTIFY_STOPS  = ALL_STOPS.filter(s => NOTIFY_LABELS.has(s.label));
 
@@ -319,6 +315,14 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
   const mountRef      = useRef<HTMLDivElement>(null);
   const updateVehiclesRef = useRef<(() => Promise<void>) | null>(null);
   const activeRef     = useRef(true);
+  const cameraRef       = useRef<THREE.PerspectiveCamera | null>(null);
+  const controlsRef     = useRef<OrbitControls | null>(null);
+  const gyroContainerRef = useRef<HTMLDivElement | null>(null);
+  const gyroRendRef      = useRef<THREE.WebGLRenderer | null>(null);
+  const gyroScRef        = useRef<THREE.Scene | null>(null);
+  const gyroCamRef       = useRef<THREE.PerspectiveCamera | null>(null);
+  const gyroCompassRef      = useRef<THREE.Group | null>(null);
+  const gyroPitchMarkerRef  = useRef<THREE.Mesh | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 600);
@@ -362,6 +366,7 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
     const camera = new THREE.PerspectiveCamera(60, W / H, 0.1, 1200);
     camera.position.set(200, 110, 0);
     camera.lookAt(0, 0, 0);
+    cameraRef.current = camera;
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true; controls.dampingFactor = 0.06;
@@ -369,8 +374,8 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
     controls.maxPolarAngle = Math.PI / 2.05;
     controls.maxDistance = 500;
     controls.target.set(0, 0, 0);
+    controlsRef.current = controls;
 
-    // Ground
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(1000, 1000),
       new THREE.MeshBasicMaterial({ color: 0x000610 }),
@@ -379,11 +384,9 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
     ground.position.y = -0.01;
     scene.add(ground);
 
-    // Grid
-    const grid = new THREE.GridHelper(1000, 120, 0x002233, 0x001122);
+    const grid = new THREE.GridHelper(1000, 1000, 0x002233, 0x001122);
     scene.add(grid);
 
-    // Bus stop markers
     STOPS.forEach(stop => {
       const marker = stopMarker(stop.label, stop.color);
       marker.position.set(stop.x, 0, stop.z);
@@ -396,7 +399,6 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
       scene.add(marker);
     });
 
-    // Generic stop markers — Points dot + instanced ground ring, 2 draw calls total
     {
       const N = EXTRA_STOPS.length;
 
@@ -439,6 +441,26 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
       t += 0.016;
       braindance.uniforms.time.value = t;
       controls.update();
+      {
+        const dx = camera.position.x - controls.target.x;
+        const dy = camera.position.y - controls.target.y;
+        const dz = camera.position.z - controls.target.z;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (gyroCompassRef.current) {
+          const horiz = Math.sqrt(dx * dx + dz * dz);
+          const heading = Math.atan2(-dx, dz);
+          const pitch   = Math.atan2(dy, horiz);
+          const qHeading = new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(0, 1, 0), heading,
+          );
+          const qPitch = new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(1, 0, 0), pitch,
+          );
+          gyroCompassRef.current.quaternion.multiplyQuaternions(qPitch, qHeading);
+        }
+        if (gyroRendRef.current && gyroScRef.current && gyroCamRef.current)
+          gyroRendRef.current.render(gyroScRef.current, gyroCamRef.current);
+      }
       for (const pulse of pulseMeshes.current) {
         const scale = 1 + (Math.sin(t * 2 + pulse.parent!.position.x) * 0.5 + 0.5) * 1.2;
         pulse.scale.setScalar(scale);
@@ -492,6 +514,8 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
     return () => {
       activeRef.current = false;
       sceneRef.current  = null;
+      cameraRef.current = null;
+      controlsRef.current = null;
       window.removeEventListener('resize', onResize);
       mount.removeEventListener('mousedown', onMouseDown);
       mount.removeEventListener('click', onClick);
@@ -523,7 +547,6 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
 
           const { bright, mid, dim, civic, resid } = e.data;
 
-          // Roads 3 draw calls
           const addLines = (buf: Float32Array, color: number, transparent: boolean, opacity: number) => {
             if (!buf.length) return;
             const geo = new THREE.BufferGeometry();
@@ -535,7 +558,6 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
           addLines(mid,    0x008855, true,  0.6);
           addLines(dim,    0x003322, true,  0.25);
 
-          // Buildings 16 civic tiles + 16 resid tiles 
           for (const buf of civic) addLines(buf, RED, true, 0.28);
           for (const buf of resid) addLines(buf, 0x006666, true, 0.55);
 
@@ -583,7 +605,6 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
             vehicleMeshes.current.set(v.id, mesh);
           }
 
-          // Arrival detection — only notify for selected stops
           for (const stop of NOTIFY_STOPS) {
             if (Math.hypot(x - stop.x, z - stop.z) < ARRIVE_DIST) {
               const key  = `${v.id}:${stop.label}:${stop.desc}`;
@@ -621,11 +642,96 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
     if (refreshKey !== undefined && refreshKey > 0) updateVehiclesRef.current?.();
   }, [refreshKey]);
 
+  useEffect(() => {
+    const container = gyroContainerRef.current;
+    if (!container) return;
+    const SIZE = 96;
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(SIZE, SIZE);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x000000, 0);
+    renderer.domElement.style.display = 'block';
+    container.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const cam = new THREE.PerspectiveCamera(42, 1, 0.1, 50);
+    cam.position.set(0, 1.2, 5.0);
+    cam.lookAt(0, 0, 0);
+
+    const ringMesh = new THREE.Mesh(
+      new THREE.TorusGeometry(1.2, 0.032, 8, 64),
+      new THREE.MeshBasicMaterial({ color: 0x00ffcc, transparent: true, opacity: 0.35 }),
+    );
+    ringMesh.rotation.x = Math.PI / 2;
+    const gyroGrid = new THREE.GridHelper(120, 100, 0x002233, 0x001122);
+
+    const tickGroup = new THREE.Group();
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      const major = i % 4 === 0;
+      const r0 = major ? 1.0 : 1.0;
+      const r1 = major ? 1.3 : 1.2;
+      const sa = Math.sin(a), ca = Math.cos(a);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute([sa*r0,0,-ca*r0, sa*r1,0,-ca*r1], 3));
+      tickGroup.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+        color: major ? 0x00ffcc : 0x006644, transparent: true, opacity: major ? 0.75 : 0.35,
+      })));
+    }
+
+    const dotGroup = new THREE.Group();
+    ([
+      [0,          0xff0088, 0.095],
+      [Math.PI/2,  0x00ffcc, 0.06],
+      [Math.PI,    0x00ffcc, 0.06],
+      [-Math.PI/2, 0x00ffcc, 0.06],
+    ] as [number, number, number][]).forEach(([a, color, r]) => {
+      const dot = new THREE.Mesh(
+        new THREE.SphereGeometry(r, 8, 8),
+        new THREE.MeshBasicMaterial({ color }),
+      );
+      dot.position.set(Math.sin(a) * 1.2, 0, -Math.cos(a) * 1.2);
+      dotGroup.add(dot);
+    });
+
+    const compassGroup = new THREE.Group();
+    compassGroup.add(ringMesh, tickGroup, dotGroup, gyroGrid);
+    scene.add(compassGroup);
+
+    const spinRing = new THREE.Mesh(
+      new THREE.TorusGeometry(1.2, 0.028, 8, 64),
+      new THREE.MeshBasicMaterial({ color: 0xffdd00, transparent: true, opacity: 0.45 }),
+    );
+    spinRing.rotation.y = Math.PI / 2;
+    compassGroup.add(spinRing);
+
+    const pitchMarker = new THREE.Mesh(
+      new THREE.SphereGeometry(0.09, 10, 10),
+      new THREE.MeshBasicMaterial({ color: 0xffffff }),
+    );
+    pitchMarker.position.set(0, 0, -1.2);
+    compassGroup.add(pitchMarker);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 1.5));
+
+    gyroRendRef.current       = renderer;
+    gyroScRef.current         = scene;
+    gyroCamRef.current        = cam;
+    gyroCompassRef.current    = compassGroup;
+    gyroPitchMarkerRef.current = pitchMarker;
+
+    return () => {
+      renderer.dispose();
+      if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
+      gyroRendRef.current = null; gyroScRef.current = null;
+      gyroCamRef.current = null; gyroCompassRef.current = null; gyroPitchMarkerRef.current = null;
+    };
+  }, []);
+
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={mountRef} style={{ width: '100%', height: '100%', position: 'relative' }} />
 
-      {/* Noise grain */}
       <div style={{
         position: 'absolute', 
         inset: 0, 
@@ -636,7 +742,6 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
         zIndex: 20 
       }} />
 
-      {/* Status panel — top left */}
       <div style={{
         position: 'absolute', top: '0.75rem', left: '0.75rem',
         fontFamily: 'monospace', fontSize: isMobile ? '0.58rem' : '0.65rem', letterSpacing: '0.08em',
@@ -679,7 +784,6 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
         {busStatus.error && <div style={{ color: '#ff0088', marginTop: '0.2rem' }}>{busStatus.error}</div>}
       </div>
 
-      {/* Arrival table — top right (desktop) / below status (mobile hidden to save space) */}
       {!isMobile && arrivals.length >= 0 && (
         <div style={{
           position: 'absolute', top: '0.75rem', right: '0.75rem',
@@ -705,7 +809,6 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
         </div>
       )}
 
-      {/* Stop departure panel — bottom center / full-width on mobile */}
       {stopPanel && (
         <div style={{
           position: 'absolute',
@@ -741,20 +844,52 @@ export default function CyberpunkMap({ refreshKey }: { refreshKey?: number }) {
         </div>
       )}
 
-      {/* Corner UI — hidden on mobile to avoid clutter */}
-      {!isMobile && (
       <div style={{
         position: 'absolute', bottom: '1.2rem', left: '1.2rem',
-        fontFamily: 'monospace', fontSize: '1.0rem',
-        color: '#00ffcc', opacity: 0.65, letterSpacing: '0.1em',
-        textTransform: 'uppercase', lineHeight: 1.6, pointerEvents: 'none',
+        display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.5rem',
+        transform: isMobile ? 'scale(0.65)' : undefined,
+        transformOrigin: 'bottom left',
       }}>
-        <div>lerkendal</div>
-        <div style={{ color: '#ff0088' }}>trondheim · atb</div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem' }}>
+          <div
+            ref={gyroContainerRef}
+            style={{
+              width: 96, height: 96,
+              borderRadius: '50%', overflow: 'hidden',
+              background: 'rgba(0,4,12,0.85)',
+              border: '1px solid rgba(0,255,204,0.2)',
+              pointerEvents: 'none',
+            }}
+          />
+          <button
+            onClick={() => {
+              const cam = cameraRef.current;
+              const ctrl = controlsRef.current;
+              if (!cam || !ctrl) return;
+              cam.position.set(200, 110, 0);
+              ctrl.target.set(0, 0, 0);
+              ctrl.update();
+            }}
+            style={{
+              fontFamily: 'monospace', fontSize: '0.58rem', letterSpacing: '0.1em',
+              color: '#00ffcc', background: 'rgba(0,4,12,0.82)',
+              border: '1px solid #00ffcc33', padding: '0.2rem 0.7rem',
+              cursor: 'pointer', textTransform: 'uppercase', pointerEvents: 'auto',
+            }}
+          >
+            reset view
+          </button>
+        </div>
+        <div style={{
+          fontFamily: 'monospace', fontSize: '1.0rem',
+          color: '#00ffcc', opacity: 0.65, letterSpacing: '0.1em',
+          textTransform: 'uppercase', lineHeight: 1.6, pointerEvents: 'none',
+        }}>
+          <div>lerkendal</div>
+          <div style={{ color: '#ff0088' }}>trondheim · atb</div>
+        </div>
       </div>
-      )}
 
-      {/* Legend — hidden on mobile to avoid clutter */}
       {!isMobile && (
       <div style={{
         position: 'absolute', bottom: '1.2rem', right: '1.2rem',

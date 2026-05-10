@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
+import West from '@mui/icons-material/West';
+import ArrowOutward from '@mui/icons-material/ArrowOutward';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
@@ -231,7 +233,7 @@ export default function AnttraPage() {
 
         <div className="nav-bar relative z-10 flex items-center pt-8 pb-0">
           <Link href="/" className="font-mono text-[10px] tracking-[0.3em] opacity-35 hover:opacity-100 transition-opacity uppercase">
-            ← return
+            <West sx={{ fontSize: 10 }} /> return
           </Link>
         </div>
 
@@ -296,7 +298,7 @@ export default function AnttraPage() {
         </span>
         <Link href="/anttra/void"
           className="relative font-mono text-[9px] tracking-[0.2em] uppercase opacity-20 hover:opacity-80 hover:tracking-[0.38em] transition-all duration-700">
-          void_segment →
+          void_segment <ArrowOutward sx={{ fontSize: 9, verticalAlign: 'middle' }} />
         </Link>
       </div>
     </div>
@@ -364,7 +366,7 @@ function ShowcaseCard({ item, index }: { item: ShowcaseItem; index: number }) {
           </h2>
           <span className="block font-mono text-[10px] tracking-[0.22em] uppercase mt-4 transition-all duration-300"
             style={{ color: item.live ? item.accent : 'rgba(208,208,208,0.25)', opacity: item.live ? (hovered ? 1 : 0.45) : 0.3 }}>
-            {item.live ? 'view project →' : 'wip'}
+            {item.live ? <span>view project <ArrowOutward sx={{ fontSize: 9, verticalAlign: 'middle' }} /></span> : 'wip'}
           </span>
         </div>
       </div>
